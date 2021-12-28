@@ -4,7 +4,9 @@ This project will eventually contain the source code for GPU accelerated String 
 
 Included so far in this project is a non-parallel version of the distance metric.
 This is a proof of concept and speed test so isn't designed to be useable.
-Currently returns the distance matrix for a string vector and itself.
+Currently returns the distance matrix for a string vector and itself in a long format.
+
+In addition to this, a parallel version has been included. This outputs the metrics in a wide format.
 
 Also included is an R script to measure as a baseline in terms of speed using the stringdist package.
 
