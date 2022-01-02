@@ -1,22 +1,19 @@
 __kernel void jarowinkler(__global char *a, __global char *b,
                           __global int *as, __global int *bs,
-                          __local int *aboo, __local int *bboo,
-                          __global float *res, const int len1,const int len2) {
-	const int idx = get_global_id(0);
-  const int jdx = get_global_id(1);
+                          __global int *aloc, __global int *bloc,
+                          __global float *res, const int len1,const int len2,
+                          int cycle_numbera, int cycle_numberb,int MBS) {
+	const int idx = cycle_numbera*MBS + get_global_id(0);
+  const int jdx = cycle_numberb*MBS + get_global_id(1);
+  const int resloc = MBS*get_global_id(0) + get_global_id(1);
 
 	if (idx < len1 && jdx < len2){
     if (as[idx]!=0 && bs[jdx]!= 0){
-      //printf("Test print from ker");
-      char *astr = &a[idx];
-      char *bstr = &b[jdx];
+      char *astr = &a[aloc[idx]];
+      char *bstr = &b[bloc[jdx]];
 
-      for(int it=0 ; it < bs[jdx] ; it++){
-        bboo[it] = 0;
-      }
-      for(int it=0 ; it < bs[jdx] ; it++){
-        aboo[it] = 0;
-      }
+      __private int aboo[30] = { 0 };
+      __private int bboo[30] = { 0 };
 
       int match_distance = max(as[idx],bs[jdx])/2-1;
       int matches = 0;
@@ -53,8 +50,9 @@ __kernel void jarowinkler(__global char *a, __global char *b,
           }
           v = v + 0.1 * common_prefix * (1-v);
         }
-        res[idx+len2*jdx] = v;
-      }
-    }
+
+        res[resloc] = v;
+      }else res[resloc] = 0;
+    }else res[resloc] = 0;
   }
 }

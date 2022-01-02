@@ -17,37 +17,22 @@
 
 #define 	MEM_SIZE                (128)
 #define 	MAX_SOURCE_SIZE 	(0x100000)
+#define   LO_THRES                0.88
+#define   HI_THRES                0.92
 
-std::vector<float> do_gpu(std::vector<std::string> av,std::vector<std::string> bv){
-  //Defining out vector
-  const int len1 = av.size();
-  const int len2 = bv.size();
-  std::vector<float> out(len1*len2,0.0);
-
-  //Defining temp values
-  std::vector<char*> apv;
-  std::vector<int> asi;
-  std::vector<char*> bpv;
-  std::vector<int> bsi;
-  for(int i = 0; i < len1 ; i++) {
-    apv.push_back(&av[i][0]);
-    asi.push_back(av[i].length());
-  }
-  for(int i = 0; i < len2 ; i++){
-    bpv.push_back(&bv[i][0]);
-    bsi.push_back(bv[i].length());
-  }
-
-  //Pointers for GPU
-  char **a = apv.data();
-  char **b = bpv.data();
-  int *as = &asi[0];
-  int *bs = &bsi[0];
-  float *res = out.data();
-
+std::vector<std::vector<std::vector<int>>> do_gpu(char *a,char *b,
+            int *as,int *bs,
+            int *al,int *bl,
+            const int len1,
+            const int len2,
+            float *res,
+            int MBS,int lws){
+  std::vector<std::vector<std::vector<int>>> out;
+  std::vector<std::vector<int>> out1;
+  std::vector<std::vector<int>> out2;
   //defining opencl memory objects
-  cl_mem cl_a,cl_as,cl_b,cl_bs,cl_res;
-  cl_a,cl_as,cl_b,cl_bs,cl_res = NULL;
+  cl_mem cl_a,cl_as,cl_al,cl_b,cl_bs,cl_bl,cl_res;
+  cl_a,cl_as,cl_al,cl_b,cl_bs,cl_bl,cl_res = NULL;
 
   //opencl prep
   cl_platform_id platform_id = NULL;
@@ -110,19 +95,11 @@ std::vector<float> do_gpu(std::vector<std::string> av,std::vector<std::string> b
 
   cl_a = clCreateBuffer (context, CL_MEM_READ_ONLY, size_a_long * sizeof(char), NULL, &ret);
   cl_as = clCreateBuffer (context, CL_MEM_READ_ONLY, len1 * sizeof(int), NULL, &ret);
+  cl_al = clCreateBuffer (context, CL_MEM_READ_ONLY, len1 * sizeof(int), NULL, &ret);
   cl_b = clCreateBuffer (context, CL_MEM_READ_ONLY, size_b_long * sizeof(char), NULL, &ret);
   cl_bs = clCreateBuffer (context, CL_MEM_READ_ONLY, len2 * sizeof(int), NULL, &ret);
+  cl_bl = clCreateBuffer (context, CL_MEM_READ_ONLY, len2 * sizeof(int), NULL, &ret);
   cl_res = clCreateBuffer (context, CL_MEM_WRITE_ONLY,  len1*len2 * sizeof(float), NULL, &ret);
-
-  //Copying data to host
-  ret &= clEnqueueWriteBuffer (command_queue, cl_a, CL_TRUE, 0, size_a_long * sizeof(char), (void *)a, 0, NULL, NULL);
-  ret &= clEnqueueWriteBuffer (command_queue, cl_as, CL_TRUE, 0, len1 * sizeof(int), (void *)as, 0, NULL, NULL);
-  ret &= clEnqueueWriteBuffer (command_queue, cl_b, CL_TRUE, 0, size_b_long * sizeof(char), (void *)b, 0, NULL, NULL);
-  ret &= clEnqueueWriteBuffer (command_queue, cl_bs, CL_TRUE, 0, len2 * sizeof(int), (void *)bs, 0, NULL, NULL);
-  if (ret != CL_SUCCESS) {
-		printf("Failed to copy date from host to device: %d\n", (int) ret);
-		return out;
-	}
 
   // Create Kernel Program from source
 	 program = clCreateProgramWithSource(context, 1, (const char **)&source_str,
@@ -147,36 +124,70 @@ std::vector<float> do_gpu(std::vector<std::string> av,std::vector<std::string> b
 		return out;
 	}
 
+  ret &= clEnqueueWriteBuffer (command_queue, cl_a, CL_TRUE, 0, (size_t) size_a_long * sizeof(char), (void *)a, 0, NULL, NULL);
+  ret &= clEnqueueWriteBuffer (command_queue, cl_al, CL_TRUE, 0, len1 * sizeof(int), (void *)al, 0, NULL, NULL);
+  ret &= clEnqueueWriteBuffer (command_queue, cl_as, CL_TRUE, 0, len1 * sizeof(int), (void *)as, 0, NULL, NULL);
 
-  //Setting kernel argument
+  ret &= clEnqueueWriteBuffer (command_queue, cl_b, CL_TRUE, 0, (size_t) size_b_long * sizeof(char), (void *)b, 0, NULL, NULL);
+  ret &= clEnqueueWriteBuffer (command_queue, cl_bl, CL_TRUE, 0, len2 * sizeof(int), (void *)bl, 0, NULL, NULL);
+  ret &= clEnqueueWriteBuffer (command_queue, cl_bs, CL_TRUE, 0, len2 * sizeof(int), (void *)bs, 0, NULL, NULL);
+
+
+
+
   ret  = clSetKernelArg(kernel, 0, sizeof (cl_mem), (void *) &cl_a);
   ret &= clSetKernelArg(kernel, 1, sizeof (cl_mem), (void *) &cl_b);
   ret &= clSetKernelArg(kernel, 2, sizeof (cl_mem), (void *) &cl_as);
   ret &= clSetKernelArg(kernel, 3, sizeof (cl_mem), (void *) &cl_bs);
-  ret &= clSetKernelArg(kernel, 4, 12*sizeof(int), NULL);
-  ret &= clSetKernelArg(kernel, 5, 12*sizeof(int), NULL);
+  ret &= clSetKernelArg(kernel, 4, sizeof (cl_mem), (void *) &cl_al);
+  ret &= clSetKernelArg(kernel, 5, sizeof (cl_mem), (void *) &cl_bl);
   ret &= clSetKernelArg(kernel, 6, sizeof (cl_mem), (void *) &cl_res);
   ret &= clSetKernelArg(kernel, 7, sizeof (cl_int), (void *) &len1);
   ret &= clSetKernelArg(kernel, 8, sizeof (cl_int), (void *) &len2);
+  ret &= clSetKernelArg(kernel,11, sizeof (cl_int), (void *) &MBS);
   if (ret != CL_SUCCESS) {
     printf("Failed to set kernel arguments %d\n", (int) ret);
     return out;
   }
 
   //Setting Work size
-  std::vector<size_t> local_work_size = {1,1};
-  std::vector<size_t> global_work_size = {len1,len2};
-	ret = clEnqueueNDRangeKernel(command_queue, kernel, 2, NULL, global_work_size.data(), local_work_size.data(), 0, NULL, NULL);
-	if (ret != CL_SUCCESS) {
-		printf("Failed to execute kernel for execution %d\n", (int) ret);
-		return out;
-	}
+  std::vector<size_t> local_work_size = {lws,lws};
+  std::vector<size_t> global_work_size = {MBS,MBS};
 
-  //Copying data back
-  ret = clEnqueueReadBuffer(command_queue, cl_res, CL_TRUE, 0, len1*len2 * sizeof(float), (void *)res, 0, NULL, NULL);
-  if (ret != CL_SUCCESS) {
-    printf("Failed to copy data from device to host %d\n", (int) ret);
-    return out;
+  int timesa = ceil((float)(len1)/(float)(MBS));
+  int timesb = ceil((float)(len2)/(float)(MBS));
+  std::vector<int> varo = {0,0,0};
+  for(int i = 0; i < timesa ; i++){
+    for(int j = 0; j < timesb; j++){
+      ret &= clSetKernelArg(kernel, 9, sizeof (cl_int), (void *) &i);
+      ret &= clSetKernelArg(kernel,10, sizeof (cl_int), (void *) &j);
+
+      ret = clEnqueueNDRangeKernel(command_queue, kernel, 2, NULL, global_work_size.data(), local_work_size.data(), 0, NULL, NULL);
+      if (ret != CL_SUCCESS) {
+        printf("Failed to execute kernel for execution %d\n", (int) ret);
+        return out;
+      }
+
+      //Copying data back
+      ret = clEnqueueReadBuffer(command_queue, cl_res, CL_TRUE, 0, MBS*MBS * sizeof(float), (void *)res, 0, NULL, NULL);
+      if (ret != CL_SUCCESS) {
+        printf("Failed to copy data from device to host %d\n", (int) ret);
+        return out;
+      }
+      for(int k = 0; k < MBS*MBS; k++){
+        if(res[k] >= HI_THRES){
+          varo[0] = i;
+          varo[1] = j;
+          varo[2] = k;
+          out2.push_back(varo);
+        }else if(res[k]>= LO_THRES){
+          varo[0] = i;
+          varo[1] = j;
+          varo[2] = k;
+          out1.push_back(varo);
+        }
+      }
+    }
   }
   /* free device resources */
   clFlush(command_queue);
@@ -188,11 +199,17 @@ std::vector<float> do_gpu(std::vector<std::string> av,std::vector<std::string> b
   clReleaseMemObject(cl_b);
   clReleaseMemObject(cl_as);
   clReleaseMemObject(cl_bs);
+  clReleaseMemObject(cl_al);
+  clReleaseMemObject(cl_bl);
   clReleaseMemObject(cl_res);
 
   clReleaseCommandQueue(command_queue);
   clReleaseContext(context);
     /* free host resources */
   free(source_str);
+
+  out.push_back(out1);
+  out.push_back(out2);
+
   return out;
 }

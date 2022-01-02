@@ -1,15 +1,19 @@
-/*Calculates the JW distance for all pairs of strings in an input file.
+/*Calculates the JW distance for all pairs of strings in an input file and
+outputs the ids for full matches and partial matches. A given match is
+considered full if the JW distance is equal to or greater than HI_THRES. It is
+considered only partial if the distance is less the HI_THRES but greater than
+LO_THRES.
 
-Input format is ./sjw [inputfile] [outputfile]. Each line of input file is
-treated as a unique string and (should) accept and character value.
+Input format is ./sjw [input1] [input2] [outputfile]. Each line of input file is
+treated as a unique string.
 
-Running complexity ~O(N^2) due to cartesian product of input (and itself) -
-thus is unavoidable. Although, this program will (unnecessarily) compute d(a,b)
-and d(b,a). The expectation is that this will lead into comparing 2 different
-input files. Also, this is a proof of concept and is used for testing algorithm
-speed on a single thread - thus reducing the number of comparisons will
-artificially reduce computation time. Optimizations will be applied in the final
-version.
+Running complexity ~O(N^2) due to cartesian product of inputs - thus is
+unavoidable. Optimizations still need to be applied. Testing has shown that the
+speed running on a GTX1660S is roughly 20x faster than 15 threads on a 3700X.
+Currently if there are too many strings to compare the GPU will likely run out
+of memory.
+
+TODO: Calculate memory requirements and subdivide task into mini-batches.
 
 Original JW implementation done by Stefan Hamminga (s@stefanhamminga.com) which
 has been (very slightly) adjusted for speed.*/
@@ -27,47 +31,78 @@ has been (very slightly) adjusted for speed.*/
 
 int main( int argc, char *argv[] ){
 
-  int NUM_THREADS = 15;
+  const int MAX_BATCH_SIZE = 10000;
+  int lws = 4;
 
 
-  if( argc != 3){
+  if( argc != 4){
     return 1;
   }
-  std::string FILEIN = argv[1];
-  std::string FILEOUT = argv[2];
+  std::string FILEIN1 = argv[1];
+  std::string FILEIN2 = argv[2];
+  std::string FILEOUT = argv[3];
 
+  std::vector<std::string> av = load_name_list(FILEIN1);
+  std::vector<std::string> bv = load_name_list(FILEIN2);
 
-  std::cout<<"Reading names...";
-  std::cout.flush();
-  std::vector<std::string> names1 = load_name_list(FILEIN);
-  std::vector<std::string> names2 = load_name_list(FILEIN);
-  std::cout<<"Done"<<std::endl;
+  //Data preparation
+  const int len1 = av.size();
+  const int len2 = bv.size();
+  std::vector<float> FLOAT_BUFF(MAX_BATCH_SIZE*MAX_BATCH_SIZE,0.0);
+  int times = ceil((float)(len1)/(float)(MAX_BATCH_SIZE))*ceil((float)(len2)/(float)(MAX_BATCH_SIZE));
+
+  std::string astr;
+  std::string bstr;
+  int aloc[len1];
+  int bloc[len2];
+  char apv[len1];
+  char bpv[len2];
+  std::vector<int> asi;
+  std::vector<int> bsi;
+
+  int cind = 0;
+  for(int i = 0; i < len1 ; i++) {
+    astr += av[i];
+    asi.push_back(av[i].length());
+    aloc[i] = cind;
+    cind+=av[i].length();
+  }
+  cind = 0;
+  for(int i = 0; i < len2 ; i++){
+    bstr += bv[i];
+    bsi.push_back(bv[i].length());
+    bloc[i] = cind;
+    cind+=bv[i].length();
+  }
+
+  //Pointers for GPU
+  char *a = &astr[0];
+  char *b = &bstr[0];
+  int *as = &asi[0];
+  int *bs = &bsi[0];
+  int *al = &aloc[0];
+  int *bl = &bloc[0];
+  float *res = FLOAT_BUFF.data();
 
   std::cout<<"Calculating distances...";
   std::cout.flush();
   auto start = std::chrono::steady_clock::now();
-  std::vector<float>  vout = do_gpu(names1,names2);
+
+  std::vector<std::vector<std::vector<int>>> vout = do_gpu(a,b,as,bs,al,bl,len1,len2,res,MAX_BATCH_SIZE,lws);
+
   auto end = std::chrono::steady_clock::now();
   double time_spent = (double)std::chrono::duration_cast<std::chrono::microseconds>(end - start).count()/1000000;
-  double ips = ((double)(names1.size()*names2.size()))/time_spent;
+  double ips = ((double)(times*av.size()*av.size()))/time_spent;
   std::cout<<"Done"<<std::endl;
+  std::cout<<"Number of full matches: "<<vout[1].size()<<std::endl;
+  std::cout<<"Number of partial matches: "<<vout[0].size()<<std::endl;
+  std::cout<< "Number of comparisons per second: " << ips <<std::endl;
 
   //write to file
   std::cout<<"Writing file...";
   std::cout.flush();
-  //write_lines(FILEOUT,vout);
+  write_gpu_out(FILEOUT,vout,MAX_BATCH_SIZE);
   std::cout<<"Done"<<std::endl;
-
-
-  std::cout<< "Number of comparisons per second: " << ips <<std::endl;
-  /*
-  for(int a = 1; a < 20; a++){
-    auto start = std::chrono::steady_clock::now();
-    do_par(names,a);
-    auto end = std::chrono::steady_clock::now();
-    std::cout<< (double)std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count()/1000 <<std::endl;
-  }*/
-  //std::cout<< edit_distance::jaro_winkler("xBnrtOJ8bpD5","mEI8XSn747Th") <<std::endl;
 
   return 0;
 }
