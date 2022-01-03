@@ -42,10 +42,15 @@ int main( int argc, char *argv[] ){
   std::string FILEIN2 = argv[2];
   std::string FILEOUT = argv[3];
 
+  std::cout<<"Loading string lists...";
+  std::cout.flush();
   std::vector<std::string> av = load_name_list(FILEIN1);
   std::vector<std::string> bv = load_name_list(FILEIN2);
+  std::cout<<"Done"<<std::endl;
 
   //Data preparation
+  std::cout<<"Prepping data...";
+  std::cout.flush();
   const int len1 = av.size();
   const int len2 = bv.size();
   std::vector<float> FLOAT_BUFF(MAX_BATCH_SIZE*MAX_BATCH_SIZE,0.0);
@@ -83,6 +88,7 @@ int main( int argc, char *argv[] ){
   int *al = &aloc[0];
   int *bl = &bloc[0];
   float *res = FLOAT_BUFF.data();
+  std::cout<<"Done"<<std::endl;
 
   std::cout<<"Calculating distances...";
   std::cout.flush();
@@ -92,7 +98,7 @@ int main( int argc, char *argv[] ){
 
   auto end = std::chrono::steady_clock::now();
   double time_spent = (double)std::chrono::duration_cast<std::chrono::microseconds>(end - start).count()/1000000;
-  double ips = ((double)(times*av.size()*av.size()))/time_spent;
+  double ips = ((double)(av.size()*av.size()))/time_spent;
   std::cout<<"Done"<<std::endl;
   std::cout<<"Number of full matches: "<<vout[1].size()<<std::endl;
   std::cout<<"Number of partial matches: "<<vout[0].size()<<std::endl;

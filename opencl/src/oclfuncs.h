@@ -99,7 +99,7 @@ std::vector<std::vector<std::vector<int>>> do_gpu(char *a,char *b,
   cl_b = clCreateBuffer (context, CL_MEM_READ_ONLY, size_b_long * sizeof(char), NULL, &ret);
   cl_bs = clCreateBuffer (context, CL_MEM_READ_ONLY, len2 * sizeof(int), NULL, &ret);
   cl_bl = clCreateBuffer (context, CL_MEM_READ_ONLY, len2 * sizeof(int), NULL, &ret);
-  cl_res = clCreateBuffer (context, CL_MEM_WRITE_ONLY,  len1*len2 * sizeof(float), NULL, &ret);
+  cl_res = clCreateBuffer (context, CL_MEM_WRITE_ONLY,  MBS*MBS * sizeof(float), NULL, &ret);
 
   // Create Kernel Program from source
 	 program = clCreateProgramWithSource(context, 1, (const char **)&source_str,
