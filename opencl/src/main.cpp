@@ -24,6 +24,7 @@ has been (very slightly) adjusted for speed.*/
 #include <string_view>
 #include <time.h>
 #include <chrono>
+#include <numeric>
 
 #include "jwdist.h"
 #include "csv.h"
@@ -44,9 +45,20 @@ int main( int argc, char *argv[] ){
 
   std::cout<<"Loading string lists...";
   std::cout.flush();
-  std::vector<std::string> av = load_name_list(FILEIN1);
-  std::vector<std::string> bv = load_name_list(FILEIN2);
+  std::vector<std::string> av_raw = load_name_list(FILEIN1);
+  std::vector<std::string> bv_raw = load_name_list(FILEIN2);
   std::cout<<"Done"<<std::endl;
+
+  std::cout<<"Getting unique strings...";
+  std::cout.flush();
+  std::vector<std::string> av = unique_strings(av_raw);
+  std::vector<std::string> bv = unique_strings(bv_raw);
+  std::vector<int> av_sind = sort_indexes(av_raw);
+  std::vector<int> bv_sind = sort_indexes(bv_raw);
+  std::vector<std::vector<int>> a_ieu = inds_each_unique(av,av_raw,av_sind);
+  std::vector<std::vector<int>> b_ieu = inds_each_unique(bv,bv_raw,bv_sind);
+  int red_per = (100*(av_raw.size() - av.size()))/av_raw.size();
+  std::cout<<"Done - reduced by "<<red_per<<"%"<<std::endl;
 
   //Data preparation
   std::cout<<"Prepping data...";
@@ -58,10 +70,8 @@ int main( int argc, char *argv[] ){
 
   std::string astr;
   std::string bstr;
-  int aloc[len1];
-  int bloc[len2];
-  char apv[len1];
-  char bpv[len2];
+  std::vector<int> aloc;
+  std::vector<int> bloc;
   std::vector<int> asi;
   std::vector<int> bsi;
 
@@ -69,14 +79,14 @@ int main( int argc, char *argv[] ){
   for(int i = 0; i < len1 ; i++) {
     astr += av[i];
     asi.push_back(av[i].length());
-    aloc[i] = cind;
+    aloc.push_back(cind);
     cind+=av[i].length();
   }
   cind = 0;
   for(int i = 0; i < len2 ; i++){
     bstr += bv[i];
     bsi.push_back(bv[i].length());
-    bloc[i] = cind;
+    bloc.push_back(cind);
     cind+=bv[i].length();
   }
 
@@ -100,15 +110,15 @@ int main( int argc, char *argv[] ){
   double time_spent = (double)std::chrono::duration_cast<std::chrono::microseconds>(end - start).count()/1000000;
   double ips = ((double)(av.size()*av.size()))/time_spent;
   std::cout<<"Done"<<std::endl;
-  std::cout<<"Number of full matches: "<<vout[1].size()<<std::endl;
-  std::cout<<"Number of partial matches: "<<vout[0].size()<<std::endl;
-  std::cout<< "Number of comparisons per second: " << ips <<std::endl;
 
   //write to file
   std::cout<<"Writing file...";
   std::cout.flush();
-  write_gpu_out(FILEOUT,vout,MAX_BATCH_SIZE);
+  write_gpu_out(FILEOUT,MAX_BATCH_SIZE,vout,a_ieu,b_ieu);
   std::cout<<"Done"<<std::endl;
 
+
+  std::cout<<std::endl;
+  std::cout<< "Number of comparisons per second: " << ips <<std::endl;
   return 0;
 }
